@@ -33,24 +33,59 @@ scheduling, user and kernel space synchronization primitives, and
 compiler optimizations for different micro architecture, vectorization
 and other compiler techniques.
 
-Running:
+# Running
 
     docker run --rm -it baryluk/povray-bench
 
-or
+and just wait and observe as benchmark is doing its things.
+
+Main metrics for comparisson is Trace Time row, that lists in seconds
+time it took to finish main stage of raytracing in POV-Ray.
+
+
+# Verbose mode
+
+For a lot of additional CPU, machine and compiler related diagnostic use:
 
     docker run --rm -it -e BENCHMARK_VERBOSE=1 baryluk/povray-bench
 
-for a lot of additional CPU, machine and compiler related diagnostic. It
-will still hide configuration and compilation stage, and is a good way to
-learn about your system.
+It will still hide configuration and compilation stage, and is a good way to
+learn about your system and share it with others.
+
+Instead of usine docker run option to pass environment variable using
+`-e BENCHMARK_VERBOSE=1`, you can use option `-v` to the same effect.
+
+# Compiler settings
+
+By default GCC compiler will be used. You can use `-c` option benchmark option,
+or `-e BENCHMARK_CLANG=1` docker run option, to switch clang compiler.
+
+In current image GCC 6.3.0 and clang 4.0 are available.
+
+Default options used by benchmark for both GCC and clang are as follow (beyond
+that provided by povray configure and make scripts explicitly):
+
+    -std=c++03 -march=native -g0 -Ofast -fomit-frame-pointer -pthread
+    -fno-stack-protector -U_FORTIFY_SOURCE
+
+During PGO first stage build `-O2` and compiler specific options will be
+appended.
+
+Additional options can be passed using `-e BENCHMARK_COPTS=...` option to docker
+run. They will be passed along to configure and build scripts at the end of
+existing options, but before any PGO-specific options.
+
+For full information about used options run benchmark in verbose mode.
 
 # Options
 
 You can pass various options to the benchmark via docker environment.
-Similar to BENCHMARK_VERBOSE as shown above.
+Similar to `-e BENCHMARK_VERBOSE=1` as shown above.
 
-Fully list of options can be seen by passing -e BENCHMARK_HELP=1 to docker run
+It is also possible to pass options directly to the benchmark script, but some
+options are not available this way right now.
+
+Fully list of options can be seen by passing `-e BENCHMARK_HELP=1` to docker run
 or using -h option, which show currently these options
 
 ```text

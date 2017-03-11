@@ -34,9 +34,11 @@ fi
 if [ "${ENABLE_UPLOAD}" != "0" ]; then
   echo 'Benchmark finished without an error and user requested resutls upload.'
   echo 'Benchmark output size (lines):' $(/usr/bin/wc -l /tmp/benchmark_full_output.txt)
+  cd /tmp
+  /bin/tar czf /tmp/files.tar.gz out/* benchmark_full_output.txt
   echo 'Uploading...'
   # TODO(baryluk): Upload other files. /tmp/cpuid.txt /proc/cpuinfo and separate outputs of all other programs.
-  /usr/bin/curl --form 'benchmark=povray' --form 'version=1' --form "data=@/tmp/benchmark_full_output.txt;type=text/plain" https://benchmarks.functor.xyz/uploader.php
+  /usr/bin/curl --form 'benchmark=povray' --form 'version=1' --form "data=@/tmp/files.tar.gz;type=application/x-compressed-tar" https://benchmarks.functor.xyz/uploader.php
   # --silent
   echo 'done'
 fi

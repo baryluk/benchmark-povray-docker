@@ -48,6 +48,7 @@ MT_PASSES=${BENCHMARK_MT_PASSES:-5}
 ST_PASSES=${BENCHMARK_ST_PASSES:-2}
 ENABLE_TEMPS=${BENCHMARK_TEMPS:-0}
 ENABLE_TIMESTAMPS=${BENCHMARK_TIMESTAMPS:-1}
+ALLOW_ONDEMAND=${BENCHMARK_ONDEMAND:-0}
 
 usage () {
   echo 'docker run options influencing benchmark:'
@@ -68,6 +69,7 @@ usage () {
   echo '  -e BENCHMARK_SHELL=1      Drop to shell in the container on any error. Disabled by default.'
   echo '  -e BENCHMARK_HELP=1       Show all available options and exit.'
   echo '  -e BENCHMARK_TIMESTAMPS=0 Disable timestamps. Enabled by default.'
+  echo '  -e BENCHMARK_ONDEMAND=1   Allow "ondemand" cpu frequency governor. Disabled by default.'
   echo
   echo 'benchmark.sh options available and equivalent to above options:'
   echo '  -l    Use LTO.'
@@ -162,9 +164,11 @@ d () {
   fi
 }
 
-supersilent || d
+mkdir /tmp/out
 
-supersilent || echo $(d) "Passed options: VERBOSE=${BENCHMARK_VERBOSE} QUIET=${BENCHMARK_QUIET} CLANG=${BENCHMARK_CLANG} LTO=${BENCHMARK_LTO} PGO=${BENCHMARK_PGO} QUICK=${BENCHMARK_QUICK} TEMPS=${BENCHMARK_TEMPS} MT_PASSES=${BENCHMARK_MT_PASSES} ST_PASSES=${BENCHMARK_ST_PASSES} BUILD_JOBS=${BENCHMARK_BUILD_JOBS} COPTS=${BENCHMARK_OPTS}"
+supersilent || d | tee /tmp/out/timestamp-start.txt
+
+supersilent || echo $(d) "Passed options: VERBOSE=${BENCHMARK_VERBOSE} QUIET=${BENCHMARK_QUIET} CLANG=${BENCHMARK_CLANG} LTO=${BENCHMARK_LTO} PGO=${BENCHMARK_PGO} QUICK=${BENCHMARK_QUICK} TEMPS=${BENCHMARK_TEMPS} MT_PASSES=${BENCHMARK_MT_PASSES} ST_PASSES=${BENCHMARK_ST_PASSES} BUILD_JOBS=${BENCHMARK_BUILD_JOBS} COPTS=${BENCHMARK_OPTS}" | tee /tmp/out/passed-options.txt
 
 if [ "${BENCHMARK_UPLOAD:-0}" != "0" ]; then
   # TODO(baryluk): This might not detect options passed via -v -q -f
@@ -185,7 +189,8 @@ if [ "${BENCHMARK_UPLOAD:-0}" != "0" ]; then
   ENABLE_QUICK=0
   ENABLE_QUIET=0
 fi
-echo $(d) "Using benchmark options: VERBOSE=${ENABLE_VERBOSE} QUIET=${ENABLE_QUIET} CLANG=${ENABLE_CLANG} LTO=${ENABLE_LTO} PGO=${ENABLE_PGO} QUICK=${ENABLE_QUICK} TEMPS=${ENABLE_TEMPS} MT_PASSES=${MT_PASSES} ST_PASSES=${ST_PASSES} BUILD_JOBS=${BUILD_JOBS} COPTS=${OPTS}"
+echo $(d) "Using benchmark options: VERBOSE=${ENABLE_VERBOSE} QUIET=${ENABLE_QUIET} CLANG=${ENABLE_CLANG} LTO=${ENABLE_LTO} PGO=${ENABLE_PGO} QUICK=${ENABLE_QUICK} TEMPS=${ENABLE_TEMPS} MT_PASSES=${MT_PASSES} ST_PASSES=${ST_PASSES} BUILD_JOBS=${BUILD_JOBS} COPTS=${OPTS}" | tee /tmp/out/using-options.txt
+echo "${OPTS}" > /tmp/out/custom_additional_benchmark_copts.txt
 
 # Hardware / software info
 
@@ -194,186 +199,207 @@ supersilent || echo $(d) 'Machine details:'
 supersilent || echo
 
 if verbose; then
-  echo $(d) 'GCC version:' $(gcc -v 2>&1 | grep '^gcc version')
-  echo $(d) 'G++ version:' $(g++ -v 2>&1 | grep '^gcc version')
-  echo $(d) 'GNU ld version:' $(ld -v 2>&1)
-  echo $(d) 'GNU gold version:' $(gold -v 2>&1)
-  echo $(d) 'GNU ld.bfd version:' $(ld.bfd -v 2>&1)
-  echo $(d) 'GNU ld.gold version:' $(ld.gold -v 2>&1)
-#  echo $(d) 'GNU ld.lld-4.0 version:' $(ld.lld-4.0 -v 2>&1)
+  echo $(d) 'GCC version:' $(gcc -v 2>&1 | grep '^gcc version' | tee /tmp/out/gcc-version.txt)
+  echo $(d) 'G++ version:' $(g++ -v 2>&1 | grep '^gcc version' | tee /tmp/out/g++-version.txt)
+  echo $(d) 'GNU ld version:' $(ld -v 2>&1 | tee /tmp/out/ld-version.txt)
+  echo $(d) 'GNU gold version:' $(gold -v 2>&1 | tee /tmp/out/gold-version.txt)
+  echo $(d) 'GNU ld.bfd version:' $(ld.bfd -v 2>&1 | tee /tmp/out/ld.bfd-version.txt)
+  echo $(d) 'GNU ld.gold version:' $(ld.gold -v 2>&1 | tee /tmp/out/ld.gold-version.txt)
+#  echo $(d) 'GNU ld.lld-4.0 version:' $(ld.lld-4.0 -v 2>&1 | tee /tmp/out/ld.lld-version.txt)
 #  lld-link-4.0
 #  clang-3.9
   echo
 
-  echo $(d) 'Uname:' $(uname -a)
-  echo $(d) 'Kernel version:' $(cat /proc/version || echo 'N/A')
+  echo $(d) 'Uname:' $(uname -a | tee /tmp/out/uname.txt)
+  echo $(d) 'Kernel version:' $(cat /proc/version | tee /tmp/out/proc-version.txt || echo 'N/A')
   echo $(d) 'Debian version:' $(cat /etc/debian_version)
   echo
 fi # verbose
 
-echo $(d) 'CPU model name:' $(cat /proc/cpuinfo  | grep '^model name' | head -n 1 || echo 'N/A')
+cat /proc/cpuinfo > /tmp/out/proc-cpuinfo.txt || echo $(d) 'No /proc/cpuinfo available!' || true
+
+echo $(d) 'CPU model name:' $(egrep '^model name' /tmp/out/proc-cpuinfo.txt | head -n 1 || echo 'N/A')
 
 if verbose; then
-  echo $(d) 'CPU cores/threads:' $(cat /proc/cpuinfo | grep ^processor | wc -l || echo 'N/A')
-  echo $(d) 'CPU flags:' $(grep ^flags /proc/cpuinfo | head -n 1 || echo 'N/A')
+  echo $(d) 'CPU cores/threads:' $(egrep '^processor' /tmp/out/proc-cpuinfo.txt | wc -l || echo 'N/A')
+  echo $(d) 'CPU flags:' $(egrep '^flags' /tmp/out/proc-cpuinfo.txt | head -n 1 || echo 'N/A')
   echo
 
-  echo $(d) 'cpuid name: ' $(/usr/bin/cpuid --one-cpu | grep 'simple synth' | head -n 1)
+  /usr/bin/cpuid --one-cpu > /tmp/out/cpuid-one-cpu.txt
+
+  echo $(d) 'cpuid name: ' $(egrep 'simple synth' /tmp/out/cpuid-one-cpu.txt | head -n 1)
   echo $(d) 'cpuid features start (mostly performance related only):'
 
-  /usr/bin/cpuid --one-cpu > /tmp/cpuid.txt
-
   #   feature information (1/edx):
-  egrep '  CMPXCHG8B inst. .*= true' /tmp/cpuid.txt || true
-  egrep '  conditional move/compare instruction .*= true' /tmp/cpuid.txt || true
-  egrep '  CLFLUSH instruction .*= true' /tmp/cpuid.txt || true
-  egrep '  MMX Technology.*= true' /tmp/cpuid.txt || true
+  egrep '  CMPXCHG8B inst. .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  conditional move/compare instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  CLFLUSH instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  MMX Technology.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Helps with context switching.
-  egrep '  FXSAVE/FXRSTOR .*= true' /tmp/cpuid.txt || true
-  egrep '  SSE extensions.*= true' /tmp/cpuid.txt || true
-  egrep '  SSE2 extensions.*= true' /tmp/cpuid.txt || true
-  egrep '  hyper-threading / multi-core supported .*= true' /tmp/cpuid.txt || true
+  egrep '  FXSAVE/FXRSTOR .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  SSE extensions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  SSE2 extensions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  hyper-threading / multi-core supported .*= true' /tmp/out/cpuid-one-cpu.txt || true
 
   #   feature information (1/ecx):
-  egrep '  PNI/SSE3: Prescott New Instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  PCLMULDQ instruction.*= true' /tmp/cpuid.txt || true
+  egrep '  PNI/SSE3: Prescott New Instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  PCLMULDQ instruction.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Faster locking / synchronization.
-  egrep '  MONITOR/MWAIT .*= true' /tmp/cpuid.txt || true
-  egrep '  VMX: virtual machine extensions .*= true' /tmp/cpuid.txt || true
-  egrep '  SSSE3 extensions.*= true' /tmp/cpuid.txt || true
+  egrep '  MONITOR/MWAIT .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  VMX: virtual machine extensions .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  SSSE3 extensions.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  context ID: adaptive or shared L1 data .*= true' /tmp/cpuid.txt || true
-  egrep '  FMA instruction.*= true' /tmp/cpuid.txt || true
-  egrep '  CMPXCHG16B instruction .*= true' /tmp/cpuid.txt || true
-  egrep '  direct cache access .*= true' /tmp/cpuid.txt || true
-  egrep '  SSE4.1 extensions.*= true' /tmp/cpuid.txt || true
-  egrep '  SSE4.2 extensions.*= true' /tmp/cpuid.txt || true
-  egrep '  MOVBE instruction .*= true' /tmp/cpuid.txt || true
-  egrep '  POPCNT instruction.*= true' /tmp/cpuid.txt || true
-  #egrep '  AES instruction .*= true' /tmp/cpuid.txt || true
+  egrep '  context ID: adaptive or shared L1 data .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  FMA instruction.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  CMPXCHG16B instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  direct cache access .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  SSE4.1 extensions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  SSE4.2 extensions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  MOVBE instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  POPCNT instruction.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  #egrep '  AES instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Helps with context switching.
-  egrep '  XSAVE/XSTOR states .*= true' /tmp/cpuid.txt || true
+  egrep '  XSAVE/XSTOR states .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Helps with context switching.
-  egrep '  OS-enabled XSAVE/XSTOR .*= true' /tmp/cpuid.txt || true
-  egrep '  AVX: advanced vector extensions.*= true' /tmp/cpuid.txt || true
-  egrep '  F16C half-precision convert instruction.*= true' /tmp/cpuid.txt || true
+  egrep '  OS-enabled XSAVE/XSTOR .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX: advanced vector extensions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  F16C half-precision convert instruction.*= true' /tmp/out/cpuid-one-cpu.txt || true
 
   #   extended feature flags (7)
-  egrep '  BMI instruction.*= true' /tmp/cpuid.txt || true
+  egrep '  BMI instruction.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Faster locking / synchronization.
-  egrep '  HLE hardware lock elision.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX2: advanced vector extensions 2.*= true' /tmp/cpuid.txt || true
-  egrep '  FDP_EXCPTN_ONLY .*= true' /tmp/cpuid.txt || true
-  egrep '  BMI2 instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  enhanced REP MOVSB/STOSB.*= true' /tmp/cpuid.txt || true
+  egrep '  HLE hardware lock elision.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX2: advanced vector extensions 2.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  FDP_EXCPTN_ONLY .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  BMI2 instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  enhanced REP MOVSB/STOSB.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Invalidate Process-Context Identifier. Helps with context switching.
-  egrep '  INVPCID instruction .*= true' /tmp/cpuid.txt || true
+  egrep '  INVPCID instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Faster locking / synchronization.
-  egrep '  RTM: restricted transactional memory.*= true' /tmp/cpuid.txt || true
-  egrep '  deprecated FPU CS/DS .*= true' /tmp/cpuid.txt || true
+  egrep '  RTM: restricted transactional memory.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  deprecated FPU CS/DS .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # LLC isolation
-  egrep '  PQE: platform quality of service enforce .*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512F: AVX-512 foundation instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512DQ: double & quadword instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  ADX instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512IFMA: fused multiply add.*= true' /tmp/cpuid.txt || true
+  egrep '  PQE: platform quality of service enforce .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512F: AVX-512 foundation instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512DQ: double & quadword instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  ADX instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512IFMA: fused multiply add.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # These two are mostly for NVDIMM, but can be used for other purposes too.
-  egrep '  CLFLUSHOPT instruction .*= true' /tmp/cpuid.txt || true
-  egrep '  CLWB instruction .*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512PF: prefetch instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512ER: exponent & reciprocal instrs.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512CD: conflict detection instrs.*= true' /tmp/cpuid.txt || true
-  #egrep '  SHA instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512BW: byte & word instructions.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512VL: vector length.*= true' /tmp/cpuid.txt || true
-  egrep '  PREFETCHWT1.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512VBMI: vector byte manipulation.*= true' /tmp/cpuid.txt || true
+  egrep '  CLFLUSHOPT instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  CLWB instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512PF: prefetch instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512ER: exponent & reciprocal instrs.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512CD: conflict detection instrs.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  #egrep '  SHA instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512BW: byte & word instructions.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512VL: vector length.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  PREFETCHWT1.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512VBMI: vector byte manipulation.*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Only on Xeon Phi
-  egrep '  AVX512_4VNNIW: neural network instrs.*= true' /tmp/cpuid.txt || true
-  egrep '  AVX512_4FMAPS: multiply acc single prec.*= true' /tmp/cpuid.txt || true
+  egrep '  AVX512_4VNNIW: neural network instrs.*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  AVX512_4FMAPS: multiply acc single prec.*= true' /tmp/out/cpuid-one-cpu.txt || true
 
   #   extended feature flags (0x80000001/edx):
   # not performance critical.
-  egrep '  no-execute page protection .*= true' /tmp/cpuid.txt || true
+  egrep '  no-execute page protection .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Ancient stuff.
-  egrep '  AMD multimedia instruction extensions .*= true' /tmp/cpuid.txt || true
-  egrep '  3DNow! instruction extensions .*= true' /tmp/cpuid.txt || true
-  egrep '  3DNow! instructions .*= true' /tmp/cpuid.txt || true
+  egrep '  AMD multimedia instruction extensions .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  3DNow! instruction extensions .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  3DNow! instructions .*= true' /tmp/out/cpuid-one-cpu.txt || true
 
   #   AMD feature flags (0x80000001/ecx):
   # ?
-  egrep '  LAHF/SAHF supported in 64-bit mode .*= true' /tmp/cpuid.txt || true
+  egrep '  LAHF/SAHF supported in 64-bit mode .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  CMP Legacy .*= true' /tmp/cpuid.txt || true
+  egrep '  CMP Legacy .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  AltMovCr8 .*= true' /tmp/cpuid.txt || true
-  egrep '  LZCNT advanced bit manipulation .*= true' /tmp/cpuid.txt || true
-  egrep '  SSE4A support .*= true' /tmp/cpuid.txt || true
-  egrep '  misaligned SSE mode .*= true' /tmp/cpuid.txt || true
+  egrep '  AltMovCr8 .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  LZCNT advanced bit manipulation .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  SSE4A support .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  misaligned SSE mode .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # Ancient stuff. But still.
-  egrep '  3DNow! PREFETCH/PREFETCHW instructions .*= true' /tmp/cpuid.txt || true
+  egrep '  3DNow! PREFETCH/PREFETCHW instructions .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  OS visible workaround .*= true' /tmp/cpuid.txt || true
-  egrep '  XOP support .*= true' /tmp/cpuid.txt || true
+  egrep '  OS visible workaround .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  XOP support .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  SKINIT/STGI support .*= true' /tmp/cpuid.txt || true
-  egrep '  4-operand FMA instruction .*= true' /tmp/cpuid.txt || true
+  egrep '  SKINIT/STGI support .*= true' /tmp/out/cpuid-one-cpu.txt || true
+  egrep '  4-operand FMA instruction .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  NodeId MSR C001100C .*= true' /tmp/cpuid.txt || true
+  egrep '  NodeId MSR C001100C .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  TBM support .*= true' /tmp/cpuid.txt || true
+  egrep '  TBM support .*= true' /tmp/out/cpuid-one-cpu.txt || true
   # ?
-  egrep '  topology extensions .*= true' /tmp/cpuid.txt || true
+  egrep '  topology extensions .*= true' /tmp/out/cpuid-one-cpu.txt || true
 
   echo $(d) 'cpuid features end'
   echo
+
   echo $(d) 'CPU frequencies from /proc/cpuinfo:'
-  cat /proc/cpuinfo  | grep '^cpu MHz' || echo $(d) 'No CPU frequency info available in /proc/cpuinfo' || true
+  egrep '^cpu MHz' /tmp/out/proc-cpuinfo.txt || echo $(d) 'No CPU frequency info available in /proc/cpuinfo' || true
+
+  echo $(d) 'Summary of CPU frequencies from /proc/cpuinfo:'
+  egrep '^cpu MHz' /tmp/out/proc-cpuinfo.txt | awk '{print $4 " MHz";}' | sed -r -e 's/^/cpus with frequency: /' | sort | uniq -c || true
+
+  /usr/bin/cpufreq-info --freq > /tmp/out/cpufreq-info-freq.txt
+  /usr/bin/cpufreq-info --hwlimits > /tmp/out/cpufreq-info-hwlimits.txt
   echo $(d) 'CPU frequency (kHz) from cpufreq-info:' $(/usr/bin/cpufreq-info --freq || echo 'No CPU frequency sensing using cpufreq-info available.')
   echo $(d) 'CPU frequency (kHz) min and max from cpufreq-info:' $(/usr/bin/cpufreq-info --hwlimits || echo 'No CPU frequency ranges using cpufreq-info available.')
+  # TODO(baryluk): This doesn't work correctly.
+  # grep . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/cpufreq_scalling_governor.txt 2>/dev/null
   echo $(d) 'CPU frequency governors in use from sysfs:' $(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort | uniq || echo 'No CPU frequency governor system available in sysfs.' || true)
 
-  if cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | grep 'ondemand' >/dev/null; then
-     echo
-     echo $(d) 'ondemand frequncy detected on some or all CPUs!'
-     echo $(d) 'You should change to "performance" governor instead for the best results.'
-     echo $(d) 'To enable "performance" governor on all CPUs, try following command:'
-     echo
-     echo $(d) 'echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null'
-     echo
-     echo $(d) 'Alternatively, rerun benchmark with -e BENCHMARK_ONDEMAND=1 after "docker run"'
-     echo
-     #exit 1
+  if [ "${ALLOW_ONDEMAND}" = "0" ]; then
+    if egrep 'ondemand' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null >/dev/null; then
+       echo
+       echo $(d) 'Detected "ondemand" CPU frequncy governor on some or all CPUs!'
+       echo $(d) 'You should change to "performance" CPU frequency governor instead for the best results.'
+       echo $(d) 'To enable "performance" CPU frequency governor on all CPUs, try following command:'
+       echo
+       echo $(d) 'echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null'
+       echo
+       echo $(d) 'Alternatively, rerun benchmark with -e BENCHMARK_ONDEMAND=1 after "docker run".'
+       echo
+       exit 1
+    fi
+  else
+      echo 1 > /tmp/allow_ondemand.txt
+      echo $(d) 'Ignoring CPU frequency governor checks (ondemand is fine as requested).'
+      echo
   fi
+
+  /usr/bin/cpufreq-info > /tmp/out/cpufreq-info.txt
   echo $(d) 'CPU frequencies from cpufreq-info:'
-  /usr/bin/cpufreq-info  | grep 'current CPU frequency is' || echo $(d) 'Unknown CPU frequency from cpufreq-info.' || true
+  egrep 'current CPU frequency is' /tmp/out/cpufreq-info.txt || echo $(d) 'Missing CPU frequency from cpufreq-info.' || true
   echo $(d) 'CPU governors from cpufreq-info:'
-  /usr/bin/cpufreq-info  | grep 'The governor ' || echo $(d) 'Unknown CPU frequency governor from cpufreq-info.' || true
+  egrep 'The governor ' /tmp/out/cpufreq-info.txt || echo $(d) 'Missing CPU frequency governor from cpufreq-info.' || true
   echo
   echo $(d) 'Machine NUMA architecture topology:'
-  /usr/bin/hwloc-ls -p --no-io --no-bridges --no-useless-caches || true
+  /usr/bin/hwloc-ls -p --no-io --no-bridges --no-useless-caches | tee /tmp/out/hwloc-ls-custom.txt || true
   echo
   echo $(d) 'Machine hardware summary:'
-  /usr/bin/hwloc-info -p  || true # --whole-system
+  /usr/bin/hwloc-info -p | tee /tmp/out/hwloc-info-p.txt || true # --whole-system
+  /usr/bin/hwloc-info --whole-system > /tmp/out/hwloc-info-whole-system.txt
+  /usr/bin/hwloc-info --whole-system --support > /tmp/out/hwloc-info-whole-system-support.txt
   echo
   echo $(d) 'Number of online processors:'
-  /usr/bin/getconf _NPROCESSORS_ONLN || true
+  /usr/bin/getconf _NPROCESSORS_ONLN | tee /tmp/out/getconf-processors.txt || true
   echo
   echo $(d) 'CPU cache runtime information:'
-  /usr/bin/getconf -a | egrep 'LEVEL.+CACHE' || echo $(d) 'CPU caches information not available in getconf.' || true
+  /usr/bin/getconf -a | egrep 'LEVEL.+CACHE' | tee /tmp/out/getconf-caches.txt || echo $(d) 'CPU caches information not available in getconf.' || true
   echo
   echo $(d) 'CPU affinity set in kernel scheduler by docker or user:'
-  /usr/bin/taskset --cpu-list -p 1 || true
+  /usr/bin/taskset --cpu-list -p 1 | tee /tmp/out/taskset-cpu-list.txt || true
   echo
   echo $(d) 'Current NUMA policy settings:'
-  /usr/bin/numactl --show || true
+  /usr/bin/numactl --show | tee /tmp/out/numactl-show.txt || true
   echo
   echo $(d) 'CPU summary:'
-  /usr/bin/lscpu || true
+  /usr/bin/lscpu | tee /tmp/out/lscpu.txt || true
   echo
   echo $(d) 'Extended CPU summary for all online and offline individual cores, CPUs and sockets:'
-  #/usr/bin/lscpu --all --extended || true
-  /usr/bin/lscpu --all --extended=BOOK,NODE,SOCKET,CPU,CORE,CACHE,MINMHZ,MAXMHZ,ONLINE,POLARIZATION,CONFIGURED || true
+  #/usr/bin/lscpu --all --extended | tee /tmp/out/lscpu-all-extended.txt || true
+  /usr/bin/lscpu --all --extended=BOOK,NODE,SOCKET,CPU,CORE,CACHE,MINMHZ,MAXMHZ,ONLINE,POLARIZATION,CONFIGURED | tee /tmp/out/lscpu-all-extended-custom.txt || true
   # Version of lscpu 2.28.2 in Ubuntu doesn support DRAWER (highest level above the BOOK).
   # util-linux 2.29.1 is required.
   echo
@@ -382,27 +408,45 @@ if verbose; then
   echo
 
   echo $(d) 'Memory use in Megibytes:'
-  /usr/bin/free -m
+  /usr/bin/free -m | tee /tmp/out/free-m.txt
   echo
 
   # TODO(baryluk): Docker version
   echo $(d) 'Main library and compiler versions:'
-  (dpkg -l libc6 'libboost-thread*' 'libstdc*' 'llvm*' 'libllvm*' 'clang*' 'gcc*') | egrep '^ii '
+  (dpkg -l libc6 'libboost-thread*' 'libstdc*' 'llvm*' 'libllvm*' 'clang*' 'gcc*') | egrep '^ii ' | tee /tmp/out/dpkg-mainlibs.txt
   echo
 
   # Requires root or access to /dev/mem. Or not that useful.
   #echo 'DMI table content:'
-  #/usr/sbin/dmidecode --quiet || true
+  #/usr/sbin/dmidecode --quiet | tee /tmp/out/dmidecode.txt || true
   #
   #echo 'BIOS information:'
-  #/usr/sbin/biosdecode || true
+  #/usr/sbin/biosdecode | /tmp/out/biosdecode.txt || true
   #
-  #/usr/bin/lspci -t -v -nn || true
+  #/usr/bin/lspci -t -v -nn | tee /tmp/out/lspci-tvnn.txt || true
 
   # TODO(baryluk): EDAC / RAS / ECC memory stuff.
   # TODO(baryluk): Memory frequency, dimms, ranks, channels info.
 
   # TODO(baryluk): Performance counters info maybe?
+
+  cat /proc/stat > /tmp/out/proc-stat.txt
+  cat /proc/meminfo > /tmp/out/proc-meminfo.txt
+  cat /proc/interrupts > /tmp/out/proc-interrupts.txt
+  cat /proc/vmstat > /tmp/out/proc-vmstat.txt
+  cat /proc/execdomains > /tmp/out/proc-execdomains.txt || true
+  cat /proc/zoneinfo > /tmp/out/proc-zoneinfo.txt
+  cat /proc/uptime > /tmp/out/proc-uptime.txt
+  cat /proc/loadavg > /tmp/out/proc-loadavg.txt
+  cat /proc/swaps > /tmp/out/proc-swaps.txt
+  cat /proc/cmdline > /tmp/out/proc-cmdline.txt
+  cat /proc/buddyinfo > /tmp/out/proc-buddyinfo.txt
+
+  # /proc/iomem
+  # /proc/ioports
+  # /proc/filesystems
+  # /proc/schedstat
+
 fi # verbose
 
 echo
@@ -455,12 +499,13 @@ OBJDUMP=objdump
 #"-floop-nest-optimize -floop-parallelize-all -ftree-vectorize -fvariable-expansion-in-unroller"
 
 if [ "${ENABLE_CLANG}" != "0" ]; then
+  echo 1 > /tmp/out/clang.txt
   CC=clang-${CLANG_VERSION}
   CXX=clang++-${CLANG_VERSION}
   CPP=clang-cpp-${CLANG_VERSION} # Only in >=4.0
   if verbose; then
-    echo $(d) 'clang version:' $(${CC} --version | grep '^clang version')
-    echo $(d) 'clang++ version:' $(${CXX} --version | grep '^clang version')
+    echo $(d) 'clang version:' $(${CC} --version | grep '^clang version' | tee /tmp/out/clang-version.txt)
+    echo $(d) 'clang++ version:' $(${CXX} --version | grep '^clang version' | tee /tmp/out/clang++-version.txt)
     echo
   fi # verbose
 
@@ -472,6 +517,7 @@ if [ "${ENABLE_CLANG}" != "0" ]; then
   #CXXFLAGS="${CFLAGS} -B/usr/lib/gold-ld"
 
   if [ "${ENABLE_LTO}" = "1" ]; then
+    echo 1 > /tmp/out/lto.txt
     if ! supersilent; then
       echo $(d) 'LTO (Link Time Optimization) options enabled.'
       echo
@@ -490,6 +536,7 @@ if [ "${ENABLE_CLANG}" != "0" ]; then
     OBJDUMP="llvm-objdump-${CLANG_VERSION}"
   fi
 else
+  echo 1 > /tmp/out/gcc.txt
   if verbose; then
     echo $(d) 'GCC version:' $(${CC} -v 2>&1 | grep '^gcc version')
     echo $(d) 'G++ version:' $(${CXX} -v 2>&1 | grep '^gcc version')
@@ -497,6 +544,7 @@ else
   fi # verbose
 
   if [ "${ENABLE_LTO}" != "0" ]; then
+    echo 1 > /tmp/out/lto.txt
     supersilent || echo $(d) 'LTO (Link Time Optimization) options enabled.'
     # -flto=6 means to use 6 threads / processes to do work.
     # but lto-partition=none basically disables that and do optimization having full view of entire program.
@@ -598,6 +646,7 @@ build () {
 }
 
 if [ "${ENABLE_PGO}" != "0" ]; then
+  echo 1 > /tmp/out/pgo.txt
   supersilent || echo $(d) 'FDO/PGO (Feadback driven / Profile guided optimization) enabled.'
   supersilent || echo
 
@@ -607,11 +656,13 @@ if [ "${ENABLE_PGO}" != "0" ]; then
 
   supersilent || echo $(d) 'Configuring intrumented binary...'
 
+  mkdir -p /tmp/pgo
+
   if [ "${ENABLE_CLANG}" != "0" ]; then 
     FDO_PASS1_COPTS="-O2 -fprofile-instr-generate"
-    export LLVM_PROFILE_FILE="/tmp/code-povray-%m.profraw"  # %p pid, %m ids, %h hostname.
+    export LLVM_PROFILE_FILE="/tmp/pgo/code-povray-%m.profraw"  # %p pid, %m ids, %h hostname.
   else
-    FDO_PASS1_COPTS="-O2 -fno-omit-frame-pointer -fprofile-generate=/tmp/povray-profile1"  # -g
+    FDO_PASS1_COPTS="-O2 -fno-omit-frame-pointer -fprofile-generate=/tmp/pgo/povray-profile1"  # -g
   fi
 
   if ! supersilent; then
@@ -637,38 +688,44 @@ if [ "${ENABLE_PGO}" != "0" ]; then
   #configure
 
   build
+  # TODO(baryluk): Measure time of build.
+
+  file ./unix/povray > /tmp/out/file-unix-povray.pgo.txt
+  ldd ./unix/povray > /tmp/out/ldd-unix-povray.pgo.txt
+  ls -l ./unix/povray > /tmp/out/ls-l-unix-povray.pgo.txt
 
   supersilent || echo $(d) 'Executing multi-threaded benchmark once to gather feedback (should take less than 20 minutes, but can take more than hour on older systems)...'
-  #rm -vf /tmp/povray-profile1
+  #rm -vf /tmp/pgo/povray-profile1
   echo | nice /usr/bin/time ./unix/povray -benchmark | hole  # FIXME(baryluk): Disable buffering
   # TODO(baryluk): Execute with smaller image, and smaller number of threads to reduce cache bouncing?
   # 2>&1 | egrep 'Photon Time|Trace Time|elapsed'
+  # TODO(baryluk): Measure time of profiling run.
   supersilent || echo $(d) 'done'
   supersilent || echo
 
   if [ "${ENABLE_CLANG}" != "0" ]; then 
     if ! supersilent; then
       echo $(d) 'Profile files size:'
-      ls -l /tmp/code-povray-*.profraw
+      ls -l /tmp/pgo/code-povray-*.profraw
       echo
     fi
 
     supersilent || echo $(d) 'Merging raw profile files for LLVM...'
-    llvm-profdata-${CLANG_VERSION} merge -output=/tmp/code-merged.profdata /tmp/code-povray-*.profraw
+    llvm-profdata-${CLANG_VERSION} merge -output=/tmp/pgo/code-merged.profdata /tmp/pgo/code-povray-*.profraw
     supersilent || echo
 
     if ! supersilent; then
       echo $(d) 'Merged profile for LLVM file size:'
-      ls -l /tmp/code-merged.profdata
+      ls -l /tmp/pgo/code-merged.profdata
       echo
     fi
 
-    # Other option is to use -fprofile-generate=/tmp/some-dir/, then -fprofile-use=/tmp/some-dir,
+    # Other option is to use -fprofile-generate=/tmp/pgo/some-dir/, then -fprofile-use=/tmp/pgo/some-dir,
     # which should use %m and merging automatically and read profile file in second stage.
   else
     if ! supersilent; then
       echo $(d) 'Profile files size:'
-      ls -l /tmp/povray-profile1
+      ls -l /tmp/pgo/povray-profile1
       echo
     fi
   fi
@@ -685,9 +742,9 @@ if [ "${ENABLE_PGO}" != "0" ]; then
 
   supersilent || echo $(d) 'Modifying main compilation flags to use a profile...'
   if [ "${ENABLE_CLANG}" != "0" ]; then 
-    FDO_PASS2_COPTS="-fprofile-instr-use=/tmp/code-merged.profdata"
+    FDO_PASS2_COPTS="-fprofile-instr-use=/tmp/pgo/code-merged.profdata"
   else
-    FDO_PASS2_COPTS="-fprofile-use=/tmp/povray-profile1 -fomit-frame-pointer -Wno-coverage-mismatch -fprofile-correction"
+    FDO_PASS2_COPTS="-fprofile-use=/tmp/pgo/povray-profile1 -fomit-frame-pointer -Wno-coverage-mismatch -fprofile-correction"
   fi
   CFLAGS="${CFLAGS} ${FDO_PASS2_COPTS}"
   CXXFLAGS="${CXXFLAGS} ${FDO_PASS2_COPTS}"
@@ -695,19 +752,22 @@ if [ "${ENABLE_PGO}" != "0" ]; then
   supersilent || echo
 fi  # fdo
 
+echo "${CFLAGS}" > /tmp/out/main-full-cflags.txt
+echo "${CXXFLAGS}" > /tmp/out/main-full-cxxflags.txt
+
 configure
 
 build
 
 if verbose; then
   echo $(d) 'Binary details:'
-  /usr/bin/file ./unix/povray
+  /usr/bin/file ./unix/povray | tee /tmp/out/file-unix-povray.txt
   echo
   echo $(d) 'Dynamic linking details:'
-  /usr/bin/ldd ./unix/povray
+  /usr/bin/ldd ./unix/povray | tee /tmp/out/ldd-unix-povray.txt
   echo
   echo $(d) 'Size:'
-  ls -l ./unix/povray
+  ls -l ./unix/povray | tee /tmp/out/ls-l-unix-povray.txt
   echo
 fi # verbose
 
@@ -718,10 +778,10 @@ fi # verbose
 
 if [ "${ENABLE_QUICK}" != "0" ]; then
   supersilent || echo $(d) 'Not waiting for system to settle down (1 minute loadavg < 1.0)...'
-  supersilent || /usr/bin/uptime
+  supersilent || /usr/bin/uptime | tee /tmp/out/uptime.txt
   supersilent || echo
   supersilent || echo $(d) 'Checking vmstat quickly...'
-  supersilent || /usr/bin/vmstat 1 2
+  supersilent || /usr/bin/vmstat 1 2| tee /tmp/out/vmstat.txt
   supersilent || echo
 else
   #echo $(d) 'Waiting for system to settle down (1 minute loadavg < 1.0)...'
@@ -729,19 +789,19 @@ else
   #  sleep 10
   #  echo $(d) 'Still waiting for system to settle down (1 minute loadavg < 1.0)...'
   #done
-  #/usr/bin/uptime
+  #/usr/bin/uptime | tee /tmp/out/uptime.txt
   #echo
 
   supersilent || echo $(d) 'Waiting for system to settle down (1 minute system load average to fall below 0.15)...'
   supersilent || echo $(d) 'This can take about 3 minutes. Waiting can be canceled with single Ctrl-C,'
-  supersilent || echo $(d) 'or by passing -e BENCHMARK_QUICK=1 option to docker run.'
+  supersilent || echo $(d) 'or by passing -e BENCHMARK_QUICK=1 option to docker run or -Q to benchmark.'
   while [ $(/usr/bin/uptime | sed -r -e 's/.*load average: //' | awk -F ',' '{ print $1 * 100; }') -gt 15 ]; do
     sleep 5
     supersilent || echo $(d) 'Still waiting for system to settle down (1 minute system load average to fall below 0.15)...'
     supersilent || /usr/bin/uptime
     sleep 15
   done
-  supersilent || /usr/bin/uptime
+  supersilent || /usr/bin/uptime | tee /tmp/out/uptime.txt
   supersilent || echo
 
   supersilent || echo $(d) 'Waiting for only one user to be be logged in (useless when running under docker)...'
@@ -750,7 +810,7 @@ else
     sleep 5
     supersilent || echo $(d) 'Still waiting for only one user to be be logged in...'
   done
-  supersilent || /usr/bin/uptime
+  supersilent || /usr/bin/uptime | tee /tmp/out/uptime.txt
   supersilent || echo
 
 #  while true; do
@@ -765,7 +825,7 @@ else
 
   if verbose; then
     echo $(d) 'Checking vmstat...'
-    /usr/bin/vmstat 1 6
+    /usr/bin/vmstat 1 6 | tee /tmp/out/vmstat.txt
     echo
   fi # verbose
 fi # not quick
@@ -786,11 +846,11 @@ tempsloop () {
       temps
     fi
     sleep 2
-  done
+  done | tee /tmp/out/temps.txt
 }
 
 supersilent || echo $(d) 'Prefetching binary to file system cache...'
-/usr/bin/time cat ./unix/povray >/dev/null >&1 | hole
+/usr/bin/time cat ./unix/povray >/dev/null >&1 | hole | tee /tmp/out/prefetching.txt
 supersilent || echo $(d) 'done'
 
 b1 () {
@@ -850,5 +910,5 @@ kill "${TEMPSLOOP_PID}"
 # TODO(baryluk): How to detect version of docker from inside docker?
 # TODO(baryluk): How to detect virtualization (Xen, KVM, etc)? dmesg?
 
-echo $(d) 'Benchmarks finished.'
+echo $(d) 'Benchmarks finished.' | tee /tmp/out/timestamp-end.txt
 echo

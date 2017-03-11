@@ -842,6 +842,10 @@ temps () {
 
 tempsloop () {
   while true; do
+    if [ -f /tmp/tempsloop.stop ]; then
+      rm -f /tmp/tempsloop.stop
+      exit 0
+    fi
     if [ "${ENABLE_TEMPS}" != "0" ]; then
       temps
     fi
@@ -904,7 +908,9 @@ if [ "${ENABLE_MT_ONLY}" = "0" ]; then
   supersilent || echo
 fi
 
-kill "${TEMPSLOOP_PID}"
+touch /tmp/tempsloop.stop
+sleep 3
+kill -9 "${TEMPSLOOP_PID}" 2>/dev/null || true
 
 # TODO(baryluk): How to run linux-perf under docker?
 # TODO(baryluk): How to detect version of docker from inside docker?

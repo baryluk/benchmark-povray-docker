@@ -27,18 +27,27 @@ set -e  # Exit on any subcommand error.
 
 export LC_ALL=C
 
-ENABLE_VERBOSE=${BENCHMARK_VERBOSE:-0}
-ENABLE_BUILD=${BENCHMARK_BUILD:-0}
-ENABLE_QUIET=${BENCHMARK_QUIET:-0}
+GCC_VERSION=6
+#CLANG_VERSION=3.9  # in Ubuntu 16.04
+
+#GCC_VERSION=7  # in debian experimental.
+CLANG_VERSION=4.0  # in debian unstable.
+#CLANG_VERSION=5.0  # in debian unstable / experimental
+
 ENABLE_LTO=${BENCHMARK_LTO:-0}
 ENABLE_PGO=${BENCHMARK_PGO:-0}
 ENABLE_CLANG=${BENCHMARK_CLANG:-0}
 OPTS=${BENCHMARK_COPTS}
+BUILD_JOBS=${BENCHMARK_BUILD_JOBS:-0}
+ENABLE_VERBOSE=${BENCHMARK_VERBOSE:-0}
+ENABLE_BUILD=${BENCHMARK_BUILD:-0}
+ENABLE_QUIET=${BENCHMARK_QUIET:-0}
 ENABLE_QUICK=${BENCHMARK_QUICK:-0}
-ENABLE_MTONLY=${BENCHMARK_MTONLY:-0}
-MT_PASSES=${BENCHMARK_MTPASSES:-5}
-ST_PASSES=${BENCHMARK_STPASSES:-2}
+ENABLE_MT_ONLY=${BENCHMARK_MT_ONLY:-0}
+MT_PASSES=${BENCHMARK_MT_PASSES:-5}
+ST_PASSES=${BENCHMARK_ST_PASSES:-2}
 ENABLE_TEMPS=${BENCHMARK_TEMPS:-0}
+ENABLE_TIMESTAMPS=${BENCHMARK_TIMESTAMPS:-1}
 
 usage () {
   echo 'docker run options influencing benchmark:'
@@ -46,60 +55,61 @@ usage () {
   echo '  -e BENCHMARK_PGO=1        Use PGO/FDO (Profile Guided / Feedback-Driven optimization). Can take up to hour longer. Disabled by default.'
   echo "  -e BENCHMARK_CLANG=1      Use clang-${CLANG_VERSION} compiler instead of gcc-${GCC_VERSION} compiler. Disabled by default."
   echo '  -e BENCHMARK_COPTS=...    Pass additional custom options to compiler flags. Empty by default.'
+  echo '  -e BENCHMARK_BUILD_JOBS=1 Use specific numebr of processes for build. 0 - use all cores. 0 by default.'
   echo '  -e BENCHMARK_VERBOSE=1    Show detailed machine and build information. Disabled by default.'
   echo '  -e BENCHMARK_BUILD=1      Show all build outputs. Very verbose! Disabled by default.'
   echo '  -e BENCHMARK_QUIET=1      Be very quiet. Show only benchmark timings, nothing else. Disabled by default.'
   echo '  -e BENCHMARK_QUICK=1      Do not wait for system load to settle. Not recommended for benchmarking! Disabled by default.'
-  echo '  -e BENCHMARK_MTONLY=1     Do not run single threaded benchmarks. Disabled by default.'
-  echo '  -e BENCHMARK_MTPASSES=5   Set number of multi threaded passes. Default 5.'
-  echo '  -e BENCHMARK_STPASSES=2   Set number of single threaded passes. Default 2.'
+  echo '  -e BENCHMARK_MT_ONLY=1    Do not run single threaded benchmarks. Disabled by default.'
+  echo '  -e BENCHMARK_MT_PASSES=5  Set number of multi threaded passes. Default 5.'
+  echo '  -e BENCHMARK_ST_PASSES=2  Set number of single threaded passes. Default 2.'
   echo '  -e BENCHMARK_TEMPS=1      Show temperatures (if available) every 2 second during benchmark. Disabled by default.'
   echo '  -e BENCHMARK_UPLOAD=1     On success, upload full benchmark output and results to the author and https://benchmarks.functor.xyz/ site. Will set BENCHMARK_VERBOSE=1, BENCHMARK_QUIET=0 and BENCHMARK_QUICK=0 automatically unless with conflict with other flags. Disabled by default.'
   echo '  -e BENCHMARK_SHELL=1      Drop to shell in the container on any error. Disabled by default.'
   echo '  -e BENCHMARK_HELP=1       Show all available options and exit.'
+  echo '  -e BENCHMARK_TIMESTAMPS=0 Disable timestamps. Enabled by default.'
   echo
   echo 'benchmark.sh options available and equivalent to above options:'
   echo '  -l    Use LTO.'
   echo '  -p    Use PGO/FDO.'
   echo '  -c    Use clang.'
+  echo '  -j32  Use 32 processes for build. 0 - use all cores.'
   echo '  -v    Be verbose.'
   echo '  -b    Show build output.'
   echo '  -q    Be quiet.'
+  echo '  -Q    Be quick.'
   echo '  -f    Be quick.'
   echo '  -m    Run multi threaded only.'
   echo '  -M5   Run 5 multi threaded passes.'
   echo '  -S2   Run 2 single threaded passes.'
   echo '  -t    Show temps.'
+  echo '  -T    Show timestamps.'
   echo '  -h    Show this help and exit.'
 }
 
-while getopts tvqlpcbfM:S:h f
+while getopts lpcj:vbqQfmM:S:tTh f
 do
   case $f in
-    v) ENABLE_VERBOSE=1;;
-    b) ENABLE_BUILD=1;;
-    q) ENABLE_QUIET=1;;
     l) ENABLE_LTO=1;;
     p) ENABLE_PGO=1;;
     c) ENABLE_CLANG=1;;
+    j) BUILD_JOBS=${OPTARG};;
+    v) ENABLE_VERBOSE=1;;
+    b) ENABLE_BUILD=1;;
+    q) ENABLE_QUIET=1;;
+    Q) ENABLE_QUICK=1;;
     f) ENABLE_QUICK=1;;
-    m) ENABLE_MTONLY=1;;
+    m) ENABLE_MT_ONLY=1;;
     M) MT_PASSES=${OPTARG};;
     S) ST_PASSES=${OPTARG};;
     t) ENABLE_TEMPS=1;;
+    T) ENABLE_TIMESTAMPS=1;;
     h) usage; exit 0;;
     \?) echo 'Unknown option passed to benchmark.sh' >&2; echo >&2; usage >&2; exit 1;;
   esac
 done
 shift $(/usr/bin/expr $OPTIND - 1)
 
-
-GCC_VERSION=6
-#CLANG_VERSION=3.9  # in Ubuntu 16.04
-
-#GCC_VERSION=7  # in debian experimental.
-CLANG_VERSION=4.0  # in debian unstable.
-#CLANG_VERSION=5.0  # in debian unstable / experimental
 
 if [ "${BENCHMARK_HELP}" != "" ]; then
   usage
@@ -145,12 +155,16 @@ hole () {
 }
 
 d () {
-  /bin/date --utc --iso-8601=seconds
+  if [ "${ENABLE_TIMESTAMPS}" != "0" ]; then
+    /bin/date --utc --iso-8601=seconds
+  else
+    true
+  fi
 }
 
 supersilent || d
 
-supersilent || echo $(d) "Passed options: VERBOSE=${BENCHMARK_VERBOSE} QUIET=${BENCHMARK_QUIET} CLANG=${BENCHMARK_CLANG} LTO=${BENCHMARK_LTO} PGO=${BENCHMARK_PGO} QUICK=${BENCHMARK_QUICK} TEMPS=${BENCHMARK_TEMPS} MTPASSES=${BENCHMARK_MTPASSES} STPASSES=${BENCHMARK_STPASSES} COPTS=${BENCHMARK_OPTS}"
+supersilent || echo $(d) "Passed options: VERBOSE=${BENCHMARK_VERBOSE} QUIET=${BENCHMARK_QUIET} CLANG=${BENCHMARK_CLANG} LTO=${BENCHMARK_LTO} PGO=${BENCHMARK_PGO} QUICK=${BENCHMARK_QUICK} TEMPS=${BENCHMARK_TEMPS} MT_PASSES=${BENCHMARK_MT_PASSES} ST_PASSES=${BENCHMARK_ST_PASSES} BUILD_JOBS=${BENCHMARK_BUILD_JOBS} COPTS=${BENCHMARK_OPTS}"
 
 if [ "${BENCHMARK_UPLOAD:-0}" != "0" ]; then
   # TODO(baryluk): This might not detect options passed via -v -q -f
@@ -171,7 +185,7 @@ if [ "${BENCHMARK_UPLOAD:-0}" != "0" ]; then
   ENABLE_QUICK=0
   ENABLE_QUIET=0
 fi
-echo $(d) "Using benchmark options: VERBOSE=${ENABLE_VERBOSE} QUIET=${ENABLE_QUIET} CLANG=${ENABLE_CLANG} LTO=${ENABLE_LTO} PGO=${ENABLE_PGO} QUICK=${ENABLE_QUICK} TEMPS=${ENABLE_TEMPS} MTPASSES=${MT_PASSES} STPASSES=${ST_PASSES} COPTS=${OPTS}"
+echo $(d) "Using benchmark options: VERBOSE=${ENABLE_VERBOSE} QUIET=${ENABLE_QUIET} CLANG=${ENABLE_CLANG} LTO=${ENABLE_LTO} PGO=${ENABLE_PGO} QUICK=${ENABLE_QUICK} TEMPS=${ENABLE_TEMPS} MT_PASSES=${MT_PASSES} ST_PASSES=${ST_PASSES} BUILD_JOBS=${BUILD_JOBS} COPTS=${OPTS}"
 
 # Hardware / software info
 
@@ -423,9 +437,6 @@ silent || echo
 
 cd ..
 
-
-
-
 CC="gcc-${GCC_VERSION}"
 CXX="g++-${GCC_VERSION}"
 CPP="cpp-${GCC_VERSION}"
@@ -535,6 +546,9 @@ TOOLS="CC=${CC} CXX=${CXX} CPP=${CPP} LD=${LD} AS=${AS} AR=${AR} RANLIB=${RANLIB
 ALL_CPUS=$(/usr/bin/getconf _NPROCESSORS_ONLN)
 AVAILABLE_CPUS=$(/usr/bin/numactl --show | grep physcpubind | wc -w)
 AVAILABLE_CPUS=$((AVAILABLE_CPUS - 1))
+if [ "${BUILD_JOBS}" = "0" ]; then
+  BUILD_JOBS="${ALL_CPUS}"
+fi
 
 configure () {
   supersilent || echo $(d) "Configuring..."
@@ -570,9 +584,9 @@ configure () {
 }
 
 build () {
-  supersilent || echo $(d) "Building (can take few minutes) using ${ALL_CPUS} cores (${AVAILABLE_CPUS} available)..."
-  supersilent || echo $(d) "nice make -j${ALL_CPUS} ${TOOLS}"
-  if ! nice make "-j${ALL_CPUS}" ${TOOLS} >make_log1.txt 2>&1; then
+  supersilent || echo $(d) "Building (can take few minutes) using ${BUILD_JOBS} jobs (${AVAILABLE_CPUS} cores available)..."
+  supersilent || echo $(d) "nice make -j${BUILD_JOBS} ${TOOLS}"
+  if ! nice make "-j${BUILD_JOBS}" ${TOOLS} >make_log1.txt 2>&1; then
     echo $(d) "make failed" >&2
     echo $(d) "make output:" >&2
     cat make_log1.txt
@@ -817,7 +831,7 @@ done
 supersilent || echo $(d) 'All MT passes done'
 supersilent || echo
 
-if [ "${ENABLE_MTONLY}" = "0" ]; then
+if [ "${ENABLE_MT_ONLY}" = "0" ]; then
   echo $(d) "Starting benchmarks with 1 thread (${ST_PASSES} times; can take 20 minutes each on older systems)..."
 
   PASSES=${ST_PASSES}

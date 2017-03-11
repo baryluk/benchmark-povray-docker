@@ -27,66 +27,66 @@ set -e  # Exit on any subcommand error.
 
 export LC_ALL=C
 
-ENABLE_TEMPS=${BENCHMARK_TEMPS:-0}
 ENABLE_VERBOSE=${BENCHMARK_VERBOSE:-0}
+ENABLE_BUILD=${BENCHMARK_BUILD:-0}
 ENABLE_QUIET=${BENCHMARK_QUIET:-0}
 ENABLE_LTO=${BENCHMARK_LTO:-0}
 ENABLE_PGO=${BENCHMARK_PGO:-0}
 ENABLE_CLANG=${BENCHMARK_CLANG:-0}
 OPTS=${BENCHMARK_COPTS}
-ENABLE_BUILD=${BENCHMARK_BUILD:-0}
 ENABLE_QUICK=${BENCHMARK_QUICK:-0}
 ENABLE_MTONLY=${BENCHMARK_MTONLY:-0}
 MT_PASSES=${BENCHMARK_MTPASSES:-5}
 ST_PASSES=${BENCHMARK_STPASSES:-2}
+ENABLE_TEMPS=${BENCHMARK_TEMPS:-0}
 
 usage () {
   echo 'docker run options influencing benchmark:'
-  echo '  -e BENCHMARK_TEMPS=1      Show temperatures (if available) every 2 second during benchmark. Disabled by default.'
-  echo "  -e BENCHMARK_CLANG=1      Use clang-${CLANG_VERSION} compiler instead of gcc-${GCC_VERSION} compiler. Disabled by default."
   echo '  -e BENCHMARK_LTO=1        Use LTO (Link time optimizations) when compiling and linking. Disabled by default.'
   echo '  -e BENCHMARK_PGO=1        Use PGO/FDO (Profile Guided / Feedback-Driven optimization). Can take up to hour longer. Disabled by default.'
+  echo "  -e BENCHMARK_CLANG=1      Use clang-${CLANG_VERSION} compiler instead of gcc-${GCC_VERSION} compiler. Disabled by default."
   echo '  -e BENCHMARK_COPTS=...    Pass additional custom options to compiler flags. Empty by default.'
   echo '  -e BENCHMARK_VERBOSE=1    Show detailed machine and build information. Disabled by default.'
   echo '  -e BENCHMARK_BUILD=1      Show all build outputs. Very verbose! Disabled by default.'
-  echo '  -e BENCHMARK_HELP=1       Show all available options and exit.'
   echo '  -e BENCHMARK_QUIET=1      Be very quiet. Show only benchmark timings, nothing else. Disabled by default.'
   echo '  -e BENCHMARK_QUICK=1      Do not wait for system load to settle. Not recommended for benchmarking! Disabled by default.'
   echo '  -e BENCHMARK_MTONLY=1     Do not run single threaded benchmarks. Disabled by default.'
   echo '  -e BENCHMARK_MTPASSES=5   Set number of multi threaded passes. Default 5.'
   echo '  -e BENCHMARK_STPASSES=2   Set number of single threaded passes. Default 2.'
+  echo '  -e BENCHMARK_TEMPS=1      Show temperatures (if available) every 2 second during benchmark. Disabled by default.'
   echo '  -e BENCHMARK_UPLOAD=1     On success, upload full benchmark output and results to the author and https://benchmarks.functor.xyz/ site. Will set BENCHMARK_VERBOSE=1, BENCHMARK_QUIET=0 and BENCHMARK_QUICK=0 automatically unless with conflict with other flags. Disabled by default.'
   echo '  -e BENCHMARK_SHELL=1      Drop to shell in the container on any error. Disabled by default.'
+  echo '  -e BENCHMARK_HELP=1       Show all available options and exit.'
   echo
   echo 'benchmark.sh options available and equivalent to above options:'
-  echo '  -t    Show temps.'
-  echo '  -c    Use clang.'
   echo '  -l    Use LTO.'
   echo '  -p    Use PGO/FDO.'
+  echo '  -c    Use clang.'
   echo '  -v    Be verbose.'
+  echo '  -b    Show build output.'
   echo '  -q    Be quiet.'
   echo '  -f    Be quick.'
-  echo '  -v    Show build output.'
   echo '  -m    Run multi threaded only.'
   echo '  -M5   Run 5 multi threaded passes.'
   echo '  -S2   Run 2 single threaded passes.'
+  echo '  -t    Show temps.'
   echo '  -h    Show this help and exit.'
 }
 
 while getopts tvqlpcbfM:S:h f
 do
   case $f in
-    t) ENABLE_TEMPS=1;;
     v) ENABLE_VERBOSE=1;;
+    b) ENABLE_BUILD=1;;
     q) ENABLE_QUIET=1;;
     l) ENABLE_LTO=1;;
     p) ENABLE_PGO=1;;
     c) ENABLE_CLANG=1;;
-    b) ENABLE_BUILD=1;;
     f) ENABLE_QUICK=1;;
     m) ENABLE_MTONLY=1;;
     M) MT_PASSES=${OPTARG};;
     S) ST_PASSES=${OPTARG};;
+    t) ENABLE_TEMPS=1;;
     h) usage; exit 0;;
     \?) echo 'Unknown option passed to benchmark.sh' >&2; echo >&2; usage >&2; exit 1;;
   esac

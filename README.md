@@ -90,35 +90,40 @@ or using -h option, which show currently these options
 
 ```text
 $ docker run --rm -it baryluk/povray-bench -h
-docker run options influencing benchmark:
   -e BENCHMARK_LTO=1        Use LTO (Link time optimizations) when compiling and linking. Disabled by default.
   -e BENCHMARK_PGO=1        Use PGO/FDO (Profile Guided / Feedback-Driven optimization). Can take up to hour longer. Disabled by default.
-  -e BENCHMARK_CLANG=1      Use clang- compiler instead of gcc- compiler. Disabled by default.
+  -e BENCHMARK_CLANG=1      Use clang-4.0 compiler instead of gcc-6 compiler. Disabled by default.
   -e BENCHMARK_COPTS=...    Pass additional custom options to compiler flags. Empty by default.
+  -e BENCHMARK_BUILD_JOBS=1 Use specific numebr of processes for build. 0 - use all cores. 0 by default.
   -e BENCHMARK_VERBOSE=1    Show detailed machine and build information. Disabled by default.
   -e BENCHMARK_BUILD=1      Show all build outputs. Very verbose! Disabled by default.
   -e BENCHMARK_QUIET=1      Be very quiet. Show only benchmark timings, nothing else. Disabled by default.
   -e BENCHMARK_QUICK=1      Do not wait for system load to settle. Not recommended for benchmarking! Disabled by default.
-  -e BENCHMARK_MTONLY=1     Do not run single threaded benchmarks. Disabled by default.
-  -e BENCHMARK_MTPASSES=5   Set number of multi threaded passes. Default 5.
-  -e BENCHMARK_STPASSES=2   Set number of single threaded passes. Default 2.
+  -e BENCHMARK_MT_ONLY=1    Do not run single threaded benchmarks. Disabled by default.
+  -e BENCHMARK_MT_PASSES=5  Set number of multi threaded passes. Default 5.
+  -e BENCHMARK_ST_PASSES=2  Set number of single threaded passes. Default 2.
   -e BENCHMARK_TEMPS=1      Show temperatures (if available) every 2 second during benchmark. Disabled by default.
   -e BENCHMARK_UPLOAD=1     On success, upload full benchmark output and results to the author and https://benchmarks.functor.xyz/ site. Will set BENCHMARK_VERBOSE=1, BENCHMARK_QUIET=0 and BENCHMARK_QUICK=0 automatically unless with conflict with other flags. Disabled by default.
   -e BENCHMARK_SHELL=1      Drop to shell in the container on any error. Disabled by default.
   -e BENCHMARK_HELP=1       Show all available options and exit.
+  -e BENCHMARK_TIMESTAMPS=0 Disable timestamps. Enabled by default.
+  -e BENCHMARK_ONDEMAND=1   Allow "ondemand" cpu frequency governor. Disabled by default.
 
 benchmark.sh options available and equivalent to above options:
   -l    Use LTO.
   -p    Use PGO/FDO.
   -c    Use clang.
+  -j32  Use 32 processes for build. 0 - use all cores.
   -v    Be verbose.
   -b    Show build output.
   -q    Be quiet.
+  -Q    Be quick.
   -f    Be quick.
   -m    Run multi threaded only.
   -M5   Run 5 multi threaded passes.
   -S2   Run 2 single threaded passes.
   -t    Show temps.
+  -T    Show timestamps.
   -h    Show this help and exit.
 ```
 

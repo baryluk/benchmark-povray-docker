@@ -375,7 +375,13 @@ if verbose; then
   egrep 'The governor ' /tmp/out/cpufreq-info.txt || echo $(d) 'Missing CPU frequency governor from cpufreq-info.' || true
   echo
   echo $(d) 'Machine NUMA architecture topology:'
+  /usr/bin/hwloc-ls --output-format console > /tmp/out/hwloc-ls-console-full.txt || true
+  /usr/bin/hwloc-ls --output-format console --whole-io > /tmp/out/hwloc-ls-console-whole-io.txt || true
+  /usr/bin/hwloc-ls --output-format xml --whole-io > /tmp/out/hwloc-ls-xml-whole-io.xml || true
+  /usr/bin/hwloc-ls --output-format synthetic --no-io > /tmp/out/hwloc-ls-synthetic-no-io.txt || true
+  /usr/bin/hwloc-ls --output-format svg > /tmp/out/hwloc-ls-svg-full.svg || true
   /usr/bin/hwloc-ls -p --no-io --no-bridges --no-useless-caches | tee /tmp/out/hwloc-ls-custom.txt || true
+  #/usr/bin/lstopo-no-graphics
   echo
   echo $(d) 'Machine hardware summary:'
   /usr/bin/hwloc-info -p | tee /tmp/out/hwloc-info-p.txt || true # --whole-system
@@ -393,6 +399,7 @@ if verbose; then
   echo
   echo $(d) 'Current NUMA policy settings:'
   /usr/bin/numactl --show | tee /tmp/out/numactl-show.txt || true
+  /usr/bin/numactl --hardware | tee /tmp/out/numactl-hardware.txt || true
   echo
   echo $(d) 'CPU summary:'
   /usr/bin/lscpu | tee /tmp/out/lscpu.txt || true

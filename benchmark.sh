@@ -341,18 +341,25 @@ if verbose; then
   echo $(d) 'Summary of CPU frequencies from /proc/cpuinfo:'
   egrep '^cpu MHz' /tmp/out/proc-cpuinfo.txt | awk '{print $4 " MHz";}' | sed -r -e 's/^/cpus with frequency: /' | sort | uniq -c || true
 
-  /usr/bin/cpufreq-info --freq > /tmp/out/cpufreq-info-freq.txt
-  /usr/bin/cpufreq-info --hwlimits > /tmp/out/cpufreq-info-hwlimits.txt
-  echo $(d) 'CPU frequency (kHz) from cpufreq-info:' $(/usr/bin/cpufreq-info --freq || echo 'No CPU frequency sensing using cpufreq-info available.')
-  echo $(d) 'CPU frequency (kHz) min and max from cpufreq-info:' $(/usr/bin/cpufreq-info --hwlimits || echo 'No CPU frequency ranges using cpufreq-info available.')
+  /usr/bin/cpufreq-info --freq > /tmp/out/cpufreq-info-freq.txt || true
+  /usr/bin/cpufreq-info --hwlimits > /tmp/out/cpufreq-info-hwlimits.txt || true
+  /usr/bin/cpufreq-info --driver > /tmp/out/cpufreq-info-driver.txt || true
+  /usr/bin/cpufreq-info --governors > /tmp/out/cpufreq-info-governors.txt || true
+  /usr/bin/cpufreq-info --policy > /tmp/out/cpufreq-info-policy.txt || true
+  echo $(d) 'CPU#0 frequency (kHz) from cpufreq-info:' $(/usr/bin/cpufreq-info --freq || echo 'No CPU frequency sensing using cpufreq-info available.')
+  echo $(d) 'CPU#0 frequency (kHz) min and max from cpufreq-info:' $(/usr/bin/cpufreq-info --hwlimits || echo 'No CPU frequency ranges using cpufreq-info available.')
+  echo $(d) 'CPU#0 driver in use from cpufreq-info:' $(cat /tmp/out/cpufreq-info-driver.txt)
+  echo $(d) 'CPU#0 frequency policy in use from cpufreq-info:' $(cat /tmp/out/cpufreq-info-policy.txt)
   # TODO(baryluk): This doesn't work correctly.
   # grep . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/cpufreq_scalling_governor.txt 2>/dev/null
   echo $(d) 'CPU frequency governors in use from sysfs:' $(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort | uniq || echo 'No CPU frequency governor system available in sysfs.' || true)
 
+  # TODO(baryluk): Warn about powersave.
+
   if [ "${ALLOW_ONDEMAND}" = "0" ]; then
-    if egrep 'ondemand' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null >/dev/null; then
+    if egrep 'ondemand|conservative' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null >/dev/null; then
        echo
-       echo $(d) 'Detected "ondemand" CPU frequncy governor on some or all CPUs!'
+       echo $(d) 'Detected "ondemand" or "conservative" CPU frequncy governor on some or all CPUs!'
        echo $(d) 'You should change to "performance" CPU frequency governor instead for the best results.'
        echo $(d) 'To enable "performance" CPU frequency governor on all CPUs, try following command:'
        echo
@@ -364,16 +371,17 @@ if verbose; then
     fi
   else
       echo 1 > /tmp/allow_ondemand.txt
-      echo $(d) 'Ignoring CPU frequency governor checks (ondemand is fine as requested).'
+      echo $(d) 'Ignoring CPU frequency governor checks (ondemand or conservative is fine as requested).'
       echo
   fi
 
   /usr/bin/cpufreq-info > /tmp/out/cpufreq-info.txt
-  echo $(d) 'CPU frequencies from cpufreq-info:'
-  egrep 'current CPU frequency is' /tmp/out/cpufreq-info.txt || echo $(d) 'Missing CPU frequency from cpufreq-info.' || true
-  echo $(d) 'CPU governors from cpufreq-info:'
-  egrep 'The governor ' /tmp/out/cpufreq-info.txt || echo $(d) 'Missing CPU frequency governor from cpufreq-info.' || true
+  echo $(d) 'Summary of CPU frequencies from cpufreq-info:'
+  egrep 'current CPU frequency is' /tmp/out/cpufreq-info.txt | sed 's/^/cpus with: /' | sort  | uniq -c || echo $(d) 'Missing CPU frequency from cpufreq-info.' || true
+  echo $(d) 'Summary of CPU governors from cpufreq-info:'
+  egrep 'The governor ' /tmp/out/cpufreq-info.txt | sed 's/^/cpus with: /' | sort  | uniq -c || echo $(d) 'Missing CPU frequency governor from cpufreq-info.' || true
   echo
+
   echo $(d) 'Machine NUMA architecture topology:'
   /usr/bin/hwloc-ls --output-format console > /tmp/out/hwloc-ls-console-full.txt || true
   /usr/bin/hwloc-ls --output-format console --whole-io > /tmp/out/hwloc-ls-console-whole-io.txt || true

@@ -354,10 +354,8 @@ if verbose; then
   echo $(d) 'CPU#0 driver in use from cpufreq-info:' $(cat /tmp/out/cpufreq-info-driver.txt)
   echo $(d) 'CPU#0 frequency policy in use from cpufreq-info:' $(cat /tmp/out/cpufreq-info-policy.txt)
   # TODO(baryluk): This doesn't work correctly.
-  # grep . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/cpufreq_scalling_governor.txt 2>/dev/null
+  # grep -H . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/cpufreq_scalling_governor.txt 2>/dev/null
   echo $(d) 'CPU frequency governors in use from sysfs:' $(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort | uniq || echo 'No CPU frequency governor system available in sysfs.' || true)
-
-  # TODO(baryluk): Warn about powersave.
 
   if [ "${ALLOW_ONDEMAND}" = "0" ]; then
     if egrep 'ondemand|conservative|powersave' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null >/dev/null; then
@@ -373,8 +371,8 @@ if verbose; then
        exit 1
     fi
   else
-      echo 1 > /tmp/allow_ondemand.txt
-      echo $(d) 'Ignoring CPU frequency governor checks (ondemand or conservative is fine as requested).'
+      echo 1 > /tmp/out/allow_ondemand.txt
+      echo $(d) 'Ignoring CPU frequency governor checks (ondemand, conservative or powersave is fine as requested).'
       echo
   fi
 

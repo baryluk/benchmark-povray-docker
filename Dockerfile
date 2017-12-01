@@ -27,6 +27,7 @@ RUN apt-get -y update && \
   util-linux \
   schedtool \
   numactl \
+  cpuset \
   build-essential \
   automake \
   autoconf \
@@ -54,6 +55,9 @@ RUN apt-get -y update && \
 \
 # The llvm-3.9-dev is ~required, because of the bug with ld.so.conf and linker paths in Ubuntu.
 # https://bugs.launchpad.net/ubuntu/+source/llvm-toolchain-snapshot/+bug/1254970
+
+ENV CLANG_VERSION=4.0
+ENV GCC_VERSION=6
 
 ADD benchmark_start.sh benchmark.sh /root/
 

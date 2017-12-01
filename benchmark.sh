@@ -188,6 +188,7 @@ if [ "${BENCHMARK_UPLOAD:-0}" != "0" ]; then
   ENABLE_VERBOSE=1
   ENABLE_QUICK=0
   ENABLE_QUIET=0
+  # TODO(baryluk): Enforce minimum of 5 ST passes and 3 ST passes. (or 5, once we fix it to be using separate scene or image size).
 fi
 echo $(d) "Using benchmark options: VERBOSE=${ENABLE_VERBOSE} QUIET=${ENABLE_QUIET} CLANG=${ENABLE_CLANG} LTO=${ENABLE_LTO} PGO=${ENABLE_PGO} QUICK=${ENABLE_QUICK} TEMPS=${ENABLE_TEMPS} MT_PASSES=${MT_PASSES} ST_PASSES=${ST_PASSES} BUILD_JOBS=${BUILD_JOBS} COPTS=${OPTS}" | tee /tmp/out/using-options.txt
 echo "${OPTS}" > /tmp/out/custom_additional_benchmark_copts.txt
@@ -217,6 +218,8 @@ if verbose; then
 fi # verbose
 
 cat /proc/cpuinfo > /tmp/out/proc-cpuinfo.txt || echo $(d) 'No /proc/cpuinfo available!' || true
+
+/usr/bin/nproc > /tmp/out/nproc.txt || true
 
 echo $(d) 'CPU model name:' $(egrep '^model name' /tmp/out/proc-cpuinfo.txt | head -n 1 || echo 'N/A')
 
@@ -357,9 +360,9 @@ if verbose; then
   # TODO(baryluk): Warn about powersave.
 
   if [ "${ALLOW_ONDEMAND}" = "0" ]; then
-    if egrep 'ondemand|conservative' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null >/dev/null; then
+    if egrep 'ondemand|conservative|powersave' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null >/dev/null; then
        echo
-       echo $(d) 'Detected "ondemand" or "conservative" CPU frequncy governor on some or all CPUs!'
+       echo $(d) 'Detected "ondemand", "conservative" or "powersave" CPU frequncy governor on some or all CPUs!'
        echo $(d) 'You should change to "performance" CPU frequency governor instead for the best results.'
        echo $(d) 'To enable "performance" CPU frequency governor on all CPUs, try following command:'
        echo
@@ -848,10 +851,10 @@ fi # not quick
 
 temps () {
   if verbose; then
-    echo -n $(d) 'CPU core temperatures: '
+    echo $(d) 'CPU core temperatures: '
     /usr/bin/sensors | egrep '^(Package|Core) .+°C .*' || grep . /sys/class/thermal/thermal_zone*/temp 2>/dev/null || echo 'No CPU temperature sensing available.' || true
-#cat /sys/class/thermal/thermal_zone*/{temp,type}
-#    echo
+    # cat /sys/class/thermal/thermal_zone*/{temp,type}
+    echo
   fi
 }
 
@@ -877,6 +880,7 @@ b1 () {
   # /usr/bin/schedtool -n -20 -R -p 90 -e  # nice -20, SCHED_RR with priority 95
   echo $(d) 'Benchmark: povray-3.7/standard-benchmark-scene-512x512/all-threads' pass=$1/$2
   echo | /usr/bin/time ./unix/povray -benchmark 2>&1 | egrep 'Photon Time|Trace Time|elapsed'
+# TODO(baryluk): Detect failure / crashes of povray.
 # TODO(baryluk): Convert times to pixels per second instead. And pixels per second per core.
   echo $(d) 'done'
 }
@@ -884,6 +888,13 @@ b1 () {
 b2 () {
   echo $(d) 'Benchmark: povray-3.7/standard-benchmark-scene-512x512/one-thread' pass=$1/$2
   echo | /usr/bin/time ./unix/povray +WT1 -benchmark 2>&1 | egrep 'Photon Time|Trace Time|elapsed'
+  echo $(d) 'done'
+}
+
+HALF_CPUS=$((ALL_CPUS / 2))
+b3 () {
+  echo $(d) 'Benchmark: povray-3.7/standard-benchmark-scene-512x512/half-threads' pass=$1/$2
+  echo | /usr/bin/time ./unix/povray "+WT${HALF_CPUS}" -benchmark 2>&1 | egrep 'Photon Time|Trace Time|elapsed'
   echo $(d) 'done'
 }
 
@@ -909,6 +920,23 @@ done
 
 supersilent || echo $(d) 'All MT passes done'
 supersilent || echo
+
+HT_PASSES=${MT_PASSES}
+
+echo
+echo $(d) "Starting benchmarks with half of the cores (${HT_PASSES} times; less than 2 minutes each on modern system)..."
+tempsloop &
+TEMPSLOOP_PID=$!
+
+PASSES=${HT_PASSES}
+for PASS in `seq 1 ${PASSES}`; do
+  b3 ${PASS} ${PASSES}
+  temps
+done
+
+supersilent || echo $(d) 'All HT passes done'
+supersilent || echo
+
 
 if [ "${ENABLE_MT_ONLY}" = "0" ]; then
   echo $(d) "Starting benchmarks with 1 thread (${ST_PASSES} times; can take 20 minutes each on older systems)..."
